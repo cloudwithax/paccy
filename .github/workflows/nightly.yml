@@ -17,25 +17,27 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm base-devel cmake qt6-base polkit git
+          useradd -m builder
 
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build and package
         run: |
-          VERSION=$(grep ^pkgver PKGBUILD | cut -d= -f2)
-
-          # Create source archive matching GitHub release format
-          tar czf "../paccy-${VERSION}.tar.gz" \
-            --transform "s,^\.,paccy-${VERSION}," \
-            --exclude='.git' --exclude='build' --exclude='.github' --exclude='*.tar.gz' .
-          mv "../paccy-${VERSION}.tar.gz" .
-
-          # Override source to local archive and skip hash check
-          sed -i 's|^source=.*|source=("paccy-'"${VERSION}"'.tar.gz")|' PKGBUILD
-          sed -i 's|^sha256sums=.*|sha256sums=(SKIP)|' PKGBUILD
-
-          makepkg -s --noconfirm
+          cp -r . /home/builder/build
+          chown -R builder:builder /home/builder/build
+          su builder -c '
+            cd /home/builder/build
+            VERSION=$(grep ^pkgver PKGBUILD | cut -d= -f2)
+            tar czf "../paccy-${VERSION}.tar.gz" \
+              --transform "s,^\.,paccy-${VERSION}," \
+              --exclude=".git" --exclude="build" --exclude=".github" --exclude="*.tar.gz" .
+            mv "../paccy-${VERSION}.tar.gz" .
+            sed -i "s|^source=.*|source=(\"paccy-${VERSION}.tar.gz\")|" PKGBUILD
+            sed -i "s|^sha256sums=.*|sha256sums=(SKIP)|" PKGBUILD
+            makepkg -s --noconfirm
+          '
+          cp /home/builder/build/*.pkg.tar.zst .
 
       - name: Rename nightly artifact
         run: |
