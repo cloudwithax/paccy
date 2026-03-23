@@ -26,9 +26,10 @@ jobs:
           VERSION=$(grep ^pkgver PKGBUILD | cut -d= -f2)
 
           # Create source archive matching GitHub release format
-          tar czf "paccy-${VERSION}.tar.gz" \
+          tar czf "../paccy-${VERSION}.tar.gz" \
             --transform "s,^\.,paccy-${VERSION}," \
-            --exclude='.git' --exclude='build' --exclude='.github' .
+            --exclude='.git' --exclude='build' --exclude='.github' --exclude='*.tar.gz' .
+          mv "../paccy-${VERSION}.tar.gz" .
 
           # Override source to local archive and skip hash check
           sed -i 's|^source=.*|source=("paccy-'"${VERSION}"'.tar.gz")|' PKGBUILD
