@@ -311,24 +311,32 @@ void MainWindow::uninstallPackage()
 
     // Dry run to check for dependency issues
     QProcess checkProc;
-    checkProc.start("pacman", {"-Rscn", "--print", m_packageName});
+    checkProc.start("pacman", {"-Rsc", "--print", m_packageName});
     checkProc.waitForFinished(5000);
 
-    QString stdout = checkProc.readAllStandardOutput().trimmed();
-    QString stderr = checkProc.readAllStandardError().trimmed();
+    QString stdoutOut = checkProc.readAllStandardOutput().trimmed();
+    QString stderrOut = checkProc.readAllStandardError().trimmed();
 
     if (checkProc.exitCode() != 0) {
         // Dependency conflict detected
         hideActivity();
         m_actionButton->setEnabled(true);
 
-        QString errorMsg = stderr.isEmpty() ? "Unknown error" : stderr;
+        // Parse :: lines from stderr for the actual dependency conflicts
+        QStringList conflicts;
+        for (const QString &line : stderrOut.split('\n')) {
+            QString trimmed = line.trimmed();
+            if (trimmed.startsWith(":: "))
+                conflicts.append(trimmed.mid(3));
+        }
+
         QMessageBox msgBox(this);
         msgBox.setWindowTitle("Cannot Uninstall");
         msgBox.setIcon(QMessageBox::Warning);
         msgBox.setText("Cannot remove <b>" + m_packageName + "</b>.");
-        msgBox.setInformativeText("Other packages depend on it:");
-        msgBox.setDetailedText(errorMsg);
+        msgBox.setInformativeText(conflicts.isEmpty()
+            ? stderrOut
+            : conflicts.join("\n"));
         msgBox.setStandardButtons(QMessageBox::Ok);
         msgBox.exec();
         return;
@@ -336,7 +344,7 @@ void MainWindow::uninstallPackage()
 
     // Parse what would be removed - if more than just the target, warn
     QStringList removedList;
-    for (const QString &line : stdout.split('\n')) {
+    for (const QString &line : stdoutOut.split('\n')) {
         QString trimmed = line.trimmed();
         if (!trimmed.isEmpty())
             removedList.append(trimmed);
