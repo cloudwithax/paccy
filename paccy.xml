@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-pacman-package">
+    <comment>Arch Linux Package</comment>
+    <glob pattern="*.pkg.tar.zst"/>
+    <glob pattern="*.pkg.tar.xz"/>
+    <glob pattern="*.pkg.tar.gz"/>
+    <glob pattern="*.pkg.tar"/>
+  </mime-type>
+</mime-info>

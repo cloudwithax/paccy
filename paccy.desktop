@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=paccy
+Comment=Install Arch Linux packages
+Exec=paccy %f
+Icon=package-x-generic
+Terminal=false
+Type=Application
+Categories=System;Utility;PackageManager;
+MimeType=application/x-pacman-package;application/zstd;
+StartupNotify=true
