@@ -22,6 +22,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Build and package
         run: |
           cp -r . /home/builder/build
@@ -37,7 +40,9 @@ jobs:
             sed -i "s|^sha256sums=.*|sha256sums=(SKIP)|" PKGBUILD
             makepkg --noconfirm
           '
-          cp /home/builder/build/*.pkg.tar.zst .
+
+      - name: Copy package
+        run: cp /home/builder/build/*.pkg.tar.zst .
 
       - name: Rename nightly artifact
         run: |
