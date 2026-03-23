@@ -12,7 +12,7 @@
 MainWindow::MainWindow(const QString &packagePath, QWidget *parent)
     : QMainWindow(parent)
     , m_packagePath(packagePath)
-    , m_installProcess(nullptr)
+    , m_actionProcess(nullptr)
 {
     setupUi();
     loadPackageInfo();
@@ -21,8 +21,8 @@ MainWindow::MainWindow(const QString &packagePath, QWidget *parent)
 void MainWindow::setupUi()
 {
     setWindowTitle("paccy");
-    setMinimumSize(480, 520);
-    resize(520, 560);
+    setMinimumSize(480, 540);
+    resize(520, 580);
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -64,6 +64,7 @@ void MainWindow::setupUi()
     m_archLabel = makeInfoRow("Arch:");
     m_sizeLabel = makeInfoRow("Size:");
     m_descLabel = makeInfoRow("Description:");
+    m_installedLabel = makeInfoRow("Installed:");
 
     mainLayout->addWidget(m_infoGroup);
 
@@ -79,7 +80,7 @@ void MainWindow::setupUi()
     QFont monoFont("Monospace");
     monoFont.setStyleHint(QFont::Monospace);
     m_outputView->setFont(monoFont);
-    m_outputView->setPlaceholderText("Installation output will appear here...");
+    m_outputView->setPlaceholderText("Output will appear here...");
     mainLayout->addWidget(m_outputView, 1);
 
     // Buttons
@@ -90,16 +91,16 @@ void MainWindow::setupUi()
     m_closeButton->setFixedWidth(100);
     connect(m_closeButton, &QPushButton::clicked, this, &QMainWindow::close);
 
-    m_installButton = new QPushButton("Install");
-    m_installButton->setFixedWidth(100);
-    m_installButton->setDefault(true);
-    QFont installFont = m_installButton->font();
+    m_actionButton = new QPushButton("Install");
+    m_actionButton->setFixedWidth(100);
+    m_actionButton->setDefault(true);
+    QFont installFont = m_actionButton->font();
     installFont.setBold(true);
-    m_installButton->setFont(installFont);
-    connect(m_installButton, &QPushButton::clicked, this, &MainWindow::installPackage);
+    m_actionButton->setFont(installFont);
+    connect(m_actionButton, &QPushButton::clicked, this, &MainWindow::installPackage);
 
     buttonLayout->addWidget(m_closeButton);
-    buttonLayout->addWidget(m_installButton);
+    buttonLayout->addWidget(m_actionButton);
     mainLayout->addLayout(buttonLayout);
 
     setCentralWidget(central);
@@ -111,7 +112,7 @@ void MainWindow::loadPackageInfo()
     if (!fi.exists()) {
         m_nameLabel->setText("File not found");
         m_outputView->setText("Error: " + m_packagePath + " does not exist.");
-        m_installButton->setEnabled(false);
+        m_actionButton->setEnabled(false);
         return;
     }
 
@@ -120,16 +121,12 @@ void MainWindow::loadPackageInfo()
     if (!(name.endsWith(".pkg.tar.zst") || name.endsWith(".pkg.tar.xz") || name.endsWith(".pkg.tar.gz") || name.endsWith(".pkg.tar"))) {
         m_nameLabel->setText("Invalid package");
         m_outputView->setText("Error: Not a valid pacman package file.\nSupported formats: .pkg.tar.zst, .pkg.tar.xz, .pkg.tar.gz, .pkg.tar");
-        m_installButton->setEnabled(false);
+        m_actionButton->setEnabled(false);
         return;
     }
 
     // Read .PKGINFO from archive
     QProcess proc;
-    QStringList args;
-    args << "--use-compress-program=zstd -d";
-    args << "-xf" << m_packagePath;
-    args << "-O" << ".PKGINFO";
 
     // Try natively first (libarchive with zstd support)
     proc.start("tar", {"-xf", m_packagePath, "-O", ".PKGINFO"});
@@ -139,7 +136,7 @@ void MainWindow::loadPackageInfo()
 
     // If that failed, try with explicit decompressor
     if (pkginfo.isEmpty()) {
-        proc.start("tar", args);
+        proc.start("tar", {"--use-compress-program=zstd -d", "-xf", m_packagePath, "-O", ".PKGINFO"});
         proc.waitForFinished(5000);
         pkginfo = proc.readAllStandardOutput();
     }
@@ -178,60 +175,106 @@ void MainWindow::loadPackageInfo()
         }
     }
 
+    m_packageName = name_val;
     m_nameLabel->setText(name_val.isEmpty() ? fi.baseName() : name_val);
     m_versionLabel->setText(version_val.isEmpty() ? "Unknown" : version_val);
     m_descLabel->setText(desc_val.isEmpty() ? "No description" : desc_val);
     m_archLabel->setText(arch_val.isEmpty() ? "Unknown" : arch_val);
     m_sizeLabel->setText(size_val.isEmpty() ? "Unknown" : size_val);
+
+    checkIfInstalled();
+}
+
+void MainWindow::checkIfInstalled()
+{
+    if (m_packageName.isEmpty()) return;
+
+    QProcess proc;
+    proc.start("pacman", {"-Qi", m_packageName});
+    proc.waitForFinished(3000);
+
+    m_isInstalled = (proc.exitCode() == 0);
+
+    if (m_isInstalled) {
+        m_installedLabel->setText("Yes");
+        m_actionButton->setText("Uninstall");
+        disconnect(m_actionButton, &QPushButton::clicked, this, &MainWindow::installPackage);
+        connect(m_actionButton, &QPushButton::clicked, this, &MainWindow::uninstallPackage);
+    } else {
+        m_installedLabel->setText("No");
+        m_actionButton->setText("Install");
+        disconnect(m_actionButton, &QPushButton::clicked, this, &MainWindow::uninstallPackage);
+        connect(m_actionButton, &QPushButton::clicked, this, &MainWindow::installPackage);
+    }
 }
 
 void MainWindow::installPackage()
 {
-    if (m_installProcess) return;
+    if (m_actionProcess) return;
 
-    m_installButton->setEnabled(false);
-    m_installButton->setText("Installing...");
+    m_actionButton->setEnabled(false);
+    m_actionButton->setText("Installing...");
     m_outputView->clear();
     m_outputView->append("Running: pkexec pacman -U \"" + m_packagePath + "\"\n");
 
-    m_installProcess = new QProcess(this);
-    connect(m_installProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::onInstallReadyRead);
-    connect(m_installProcess, &QProcess::readyReadStandardError, this, &MainWindow::onErrorReadyRead);
-    connect(m_installProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &MainWindow::onInstallFinished);
+    m_actionProcess = new QProcess(this);
+    connect(m_actionProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::onProcessReadyRead);
+    connect(m_actionProcess, &QProcess::readyReadStandardError, this, &MainWindow::onProcessErrorRead);
+    connect(m_actionProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &MainWindow::onProcessFinished);
 
-    m_installProcess->start("pkexec", {"pacman", "-U", "--noconfirm", m_packagePath});
+    m_actionProcess->start("pkexec", {"pacman", "-U", "--noconfirm", m_packagePath});
 }
 
-void MainWindow::onInstallReadyRead()
+void MainWindow::uninstallPackage()
 {
-    QString output = m_installProcess->readAllStandardOutput();
+    if (m_actionProcess) return;
+
+    m_actionButton->setEnabled(false);
+    m_actionButton->setText("Uninstalling...");
+    m_outputView->clear();
+    m_outputView->append("Running: pkexec pacman -R \"" + m_packageName + "\"\n");
+
+    m_actionProcess = new QProcess(this);
+    connect(m_actionProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::onProcessReadyRead);
+    connect(m_actionProcess, &QProcess::readyReadStandardError, this, &MainWindow::onProcessErrorRead);
+    connect(m_actionProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &MainWindow::onProcessFinished);
+
+    m_actionProcess->start("pkexec", {"pacman", "-R", "--noconfirm", m_packageName});
+}
+
+void MainWindow::onProcessReadyRead()
+{
+    QString output = m_actionProcess->readAllStandardOutput();
     m_outputView->moveCursor(QTextCursor::End);
     m_outputView->insertPlainText(output);
     m_outputView->verticalScrollBar()->setValue(m_outputView->verticalScrollBar()->maximum());
 }
 
-void MainWindow::onErrorReadyRead()
+void MainWindow::onProcessErrorRead()
 {
-    QString output = m_installProcess->readAllStandardError();
+    QString output = m_actionProcess->readAllStandardError();
     m_outputView->moveCursor(QTextCursor::End);
     m_outputView->insertPlainText(output);
     m_outputView->verticalScrollBar()->setValue(m_outputView->verticalScrollBar()->maximum());
 }
 
-void MainWindow::onInstallFinished(int exitCode, QProcess::ExitStatus status)
+void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 {
+    bool wasInstall = (m_actionButton->text() == "Installing...");
+
     if (status == QProcess::CrashExit) {
-        m_outputView->append("\n--- Installation process crashed ---");
+        m_outputView->append("\n--- Process crashed ---");
     } else if (exitCode != 0) {
-        m_outputView->append("\n--- Installation failed (exit code " + QString::number(exitCode) + ") ---");
+        m_outputView->append("\n--- Operation failed (exit code " + QString::number(exitCode) + ") ---");
     } else {
-        m_outputView->append("\n--- Package installed successfully ---");
+        m_outputView->append(wasInstall ? "\n--- Package installed successfully ---" : "\n--- Package uninstalled successfully ---");
     }
 
-    m_installProcess->deleteLater();
-    m_installProcess = nullptr;
+    m_actionProcess->deleteLater();
+    m_actionProcess = nullptr;
 
-    m_installButton->setEnabled(true);
-    m_installButton->setText("Install");
+    m_actionButton->setEnabled(true);
+    checkIfInstalled();
 }

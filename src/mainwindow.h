@@ -18,25 +18,30 @@ public:
 
 private slots:
     void installPackage();
-    void onInstallFinished(int exitCode, QProcess::ExitStatus status);
-    void onInstallReadyRead();
-    void onErrorReadyRead();
+    void uninstallPackage();
+    void onProcessFinished(int exitCode, QProcess::ExitStatus status);
+    void onProcessReadyRead();
+    void onProcessErrorRead();
 
 private:
     void loadPackageInfo();
+    void checkIfInstalled();
     void setupUi();
 
     QString m_packagePath;
+    QString m_packageName;
+    bool m_isInstalled = false;
 
     QLabel *m_nameLabel;
     QLabel *m_versionLabel;
     QLabel *m_descLabel;
     QLabel *m_archLabel;
     QLabel *m_sizeLabel;
-    QPushButton *m_installButton;
+    QLabel *m_installedLabel;
+    QPushButton *m_actionButton;
     QPushButton *m_closeButton;
     QTextEdit *m_outputView;
-    QProcess *m_installProcess;
+    QProcess *m_actionProcess;
     QGroupBox *m_infoGroup;
 };
 
