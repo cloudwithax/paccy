@@ -1,0 +1,61 @@
+name: Nightly Build
+
+on:
+  push:
+    branches: ["*"]
+    tags-ignore: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm base-devel cmake qt6-base polkit git
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and package
+        run: |
+          VERSION=$(grep ^pkgver PKGBUILD | cut -d= -f2)
+
+          # Create source archive matching GitHub release format
+          tar czf "paccy-${VERSION}.tar.gz" \
+            --transform "s,^\.,paccy-${VERSION}," \
+            --exclude='.git' --exclude='build' --exclude='.github' .
+
+          # Override source to local archive and skip hash check
+          sed -i 's|^source=.*|source=("paccy-'"${VERSION}"'.tar.gz")|' PKGBUILD
+          sed -i 's|^sha256sums=.*|sha256sums=(SKIP)|' PKGBUILD
+
+          makepkg -s --noconfirm
+
+      - name: Rename nightly artifact
+        run: |
+          PKG=$(ls *.pkg.tar.zst 2>/dev/null | head -1)
+          NIGHTLY="paccy-nightly-$(date +%Y%m%d)-${GITHUB_SHA:0:7}-x86_64.pkg.tar.zst"
+          mv "$PKG" "$NIGHTLY"
+          echo "PKG_FILE=$NIGHTLY" >> $GITHUB_ENV
+
+      - name: Delete old nightly
+        continue-on-error: true
+        run: |
+          gh release delete nightly --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish nightly release
+        run: |
+          gh release create nightly \
+            --title "Nightly Build" \
+            --notes "Automated build from ${{ github.sha }}" \
+            --prerelease \
+            "$PKG_FILE"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
