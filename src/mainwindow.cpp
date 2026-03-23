@@ -248,6 +248,7 @@ void MainWindow::loadPackageInfo()
     }
 
     m_packageName = name_val;
+    m_packageVersion = version_val;
     m_nameLabel->setText(name_val.isEmpty() ? fi.baseName() : name_val);
     m_versionLabel->setText(version_val.isEmpty() ? "Unknown" : version_val);
     m_descLabel->setText(desc_val.isEmpty() ? "No description" : desc_val);
@@ -266,12 +267,45 @@ void MainWindow::checkIfInstalled()
     proc.waitForFinished(3000);
 
     m_isInstalled = (proc.exitCode() == 0);
+    m_isUpgrade = false;
 
     if (m_isInstalled) {
-        m_installedLabel->setText("Yes");
-        m_actionButton->setText("Uninstall");
+        // Parse installed version from pacman -Qi output
+        QString installedVersion;
+        for (const QString &line : QString(proc.readAllStandardOutput()).split('\n')) {
+            if (line.startsWith("Version")) {
+                int colon = line.indexOf(':');
+                if (colon >= 0)
+                    installedVersion = line.mid(colon + 1).trimmed();
+                break;
+            }
+        }
+
+        // Compare versions using vercmp
+        if (!m_packageVersion.isEmpty() && !installedVersion.isEmpty()) {
+            QProcess vercmp;
+            vercmp.start("vercmp", {m_packageVersion, installedVersion});
+            vercmp.waitForFinished(3000);
+            int result = vercmp.readAllStandardOutput().trimmed().toInt();
+            m_isUpgrade = (result > 0);
+        }
+
+        if (m_isUpgrade) {
+            m_installedLabel->setText("Yes (" + installedVersion + ")");
+            m_actionButton->setText("Upgrade");
+        } else {
+            m_installedLabel->setText("Yes (" + installedVersion + ")");
+            m_actionButton->setText("Uninstall");
+        }
+
         disconnect(m_actionButton, &QPushButton::clicked, this, &MainWindow::installPackage);
-        connect(m_actionButton, &QPushButton::clicked, this, &MainWindow::uninstallPackage);
+        disconnect(m_actionButton, &QPushButton::clicked, this, &MainWindow::uninstallPackage);
+
+        if (m_isUpgrade) {
+            connect(m_actionButton, &QPushButton::clicked, this, &MainWindow::installPackage);
+        } else {
+            connect(m_actionButton, &QPushButton::clicked, this, &MainWindow::uninstallPackage);
+        }
     } else {
         m_installedLabel->setText("No");
         m_actionButton->setText("Install");
@@ -285,13 +319,14 @@ void MainWindow::installPackage()
     if (m_actionProcess) return;
 
     m_actionButton->setEnabled(false);
-    m_actionButton->setText("Installing...");
+    bool upgrading = m_isUpgrade;
+    m_actionButton->setText(upgrading ? "Upgrading..." : "Installing...");
     m_outputView->clear();
     m_outputView->append("Running: pkexec pacman -U \"" + m_packagePath + "\"\n");
 
     // Show output and throbber
     if (!m_outputToggle->isChecked()) toggleOutput();
-    showActivity("Installing package...");
+    showActivity(upgrading ? "Upgrading package..." : "Installing package...");
 
     m_actionProcess = new QProcess(this);
     connect(m_actionProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::onProcessReadyRead);
@@ -413,7 +448,9 @@ void MainWindow::onProcessErrorRead()
 
 void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 {
-    bool wasInstall = (m_actionButton->text() == "Installing...");
+    QString btnText = m_actionButton->text();
+    bool wasInstall = (btnText == "Installing..." || btnText == "Upgrading...");
+    bool wasUpgrade = (btnText == "Upgrading...");
 
     if (status == QProcess::CrashExit) {
         m_outputView->append("\n--- Process crashed ---");
@@ -422,7 +459,12 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
         m_outputView->append("\n--- Operation failed (exit code " + QString::number(exitCode) + ") ---");
         m_statusLabel->setText("Failed");
     } else {
-        m_outputView->append(wasInstall ? "\n--- Package installed successfully ---" : "\n--- Package uninstalled successfully ---");
+        if (wasUpgrade)
+            m_outputView->append("\n--- Package upgraded successfully ---");
+        else if (wasInstall)
+            m_outputView->append("\n--- Package installed successfully ---");
+        else
+            m_outputView->append("\n--- Package uninstalled successfully ---");
         m_statusLabel->setText("Done");
     }
 

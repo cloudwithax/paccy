@@ -35,7 +35,9 @@ private:
 
     QString m_packagePath;
     QString m_packageName;
+    QString m_packageVersion;
     bool m_isInstalled = false;
+    bool m_isUpgrade = false;
 
     QLabel *m_nameLabel;
     QLabel *m_versionLabel;
