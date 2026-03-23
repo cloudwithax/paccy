@@ -307,11 +307,74 @@ void MainWindow::uninstallPackage()
     if (m_actionProcess) return;
 
     m_actionButton->setEnabled(false);
+    showActivity("Checking dependencies...");
+
+    // Dry run to check for dependency issues
+    QProcess checkProc;
+    checkProc.start("pacman", {"-Rscn", "--print", m_packageName});
+    checkProc.waitForFinished(5000);
+
+    QString stdout = checkProc.readAllStandardOutput().trimmed();
+    QString stderr = checkProc.readAllStandardError().trimmed();
+
+    if (checkProc.exitCode() != 0) {
+        // Dependency conflict detected
+        hideActivity();
+        m_actionButton->setEnabled(true);
+
+        QString errorMsg = stderr.isEmpty() ? "Unknown error" : stderr;
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("Cannot Uninstall");
+        msgBox.setIcon(QMessageBox::Warning);
+        msgBox.setText("Cannot remove <b>" + m_packageName + "</b>.");
+        msgBox.setInformativeText("Other packages depend on it:");
+        msgBox.setDetailedText(errorMsg);
+        msgBox.setStandardButtons(QMessageBox::Ok);
+        msgBox.exec();
+        return;
+    }
+
+    // Parse what would be removed - if more than just the target, warn
+    QStringList removedList;
+    for (const QString &line : stdout.split('\n')) {
+        QString trimmed = line.trimmed();
+        if (!trimmed.isEmpty())
+            removedList.append(trimmed);
+    }
+
+    // removedList items are like "7zip-26.00-1.1" from pacman --print output
+    if (removedList.size() > 1) {
+        hideActivity();
+        m_actionButton->setEnabled(true);
+
+        // Build a readable list of extra packages
+        QStringList extras;
+        for (const QString &entry : removedList) {
+            if (!entry.contains(m_packageName))
+                extras.append(entry);
+        }
+
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("Confirm Removal");
+        msgBox.setIcon(QMessageBox::Warning);
+        msgBox.setText("Removing <b>" + m_packageName + "</b> will also remove the following:");
+        msgBox.setInformativeText(extras.join("\n"));
+        msgBox.setStandardButtons(QMessageBox::Cancel | QMessageBox::Ok);
+        msgBox.setDefaultButton(QMessageBox::Cancel);
+        msgBox.button(QMessageBox::Ok)->setText("Remove All");
+        msgBox.button(QMessageBox::Cancel)->setText("Cancel");
+
+        if (msgBox.exec() != QMessageBox::Ok) {
+            return;
+        }
+    }
+
+    // Proceed with uninstall
+    m_actionButton->setEnabled(false);
     m_actionButton->setText("Uninstalling...");
     m_outputView->clear();
     m_outputView->append("Running: pkexec pacman -R \"" + m_packageName + "\"\n");
 
-    // Show output and throbber
     if (!m_outputToggle->isChecked()) toggleOutput();
     showActivity("Removing package...");
 
@@ -321,7 +384,7 @@ void MainWindow::uninstallPackage()
     connect(m_actionProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onProcessFinished);
 
-    m_actionProcess->start("pkexec", {"pacman", "-R", "--noconfirm", m_packageName});
+    m_actionProcess->start("pkexec", {"pacman", "-Rscn", "--noconfirm", m_packageName});
 }
 
 void MainWindow::onProcessReadyRead()
