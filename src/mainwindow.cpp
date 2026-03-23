@@ -311,7 +311,7 @@ void MainWindow::uninstallPackage()
 
     // Dry run to check for dependency issues
     QProcess checkProc;
-    checkProc.start("pacman", {"-Rsc", "--print", m_packageName});
+    checkProc.start("pacman", {"-Rs", "--print", m_packageName});
     checkProc.waitForFinished(5000);
 
     QString stdoutOut = checkProc.readAllStandardOutput().trimmed();
@@ -392,7 +392,7 @@ void MainWindow::uninstallPackage()
     connect(m_actionProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onProcessFinished);
 
-    m_actionProcess->start("pkexec", {"pacman", "-Rscn", "--noconfirm", m_packageName});
+    m_actionProcess->start("pkexec", {"pacman", "-Rs", "--noconfirm", m_packageName});
 }
 
 void MainWindow::onProcessReadyRead()
