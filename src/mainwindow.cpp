@@ -191,7 +191,7 @@ void MainWindow::loadPackageInfo()
 
     // Check valid extension
     QString name = fi.fileName();
-    if (!(name.endsWith(".pkg.tar.zst") || name.endsWith(".pkg.tar.xz") || name.endsWith(".pkg.tar.gz") || name.endsWith(".pkg.tar"))) {
+    if (!(name.endsWith(".pkg.tar.zst") || name.endsWith(".pkg.tar.xz") || name.endsWith(".pkg.tar.gz") || name.endsWith(".pkg.tar") || name.endsWith(".pacman"))) {
         m_nameLabel->setText("Invalid package");
         m_actionButton->setEnabled(false);
         return;

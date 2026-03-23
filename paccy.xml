@@ -6,5 +6,6 @@
     <glob pattern="*.pkg.tar.xz"/>
     <glob pattern="*.pkg.tar.gz"/>
     <glob pattern="*.pkg.tar"/>
+    <glob pattern="*.pacman"/>
   </mime-type>
 </mime-info>
