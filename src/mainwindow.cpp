@@ -8,6 +8,7 @@
 #include <QFont>
 #include <QFrame>
 #include <QDir>
+#include <QPropertyAnimation>
 
 MainWindow::MainWindow(const QString &packagePath, QWidget *parent)
     : QMainWindow(parent)
@@ -21,8 +22,8 @@ MainWindow::MainWindow(const QString &packagePath, QWidget *parent)
 void MainWindow::setupUi()
 {
     setWindowTitle("paccy");
-    setMinimumSize(480, 540);
-    resize(520, 580);
+    setMinimumSize(480, 400);
+    resize(520, 460);
 
     auto *central = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(central);
@@ -68,20 +69,67 @@ void MainWindow::setupUi()
 
     mainLayout->addWidget(m_infoGroup);
 
+    // Status/throbber area - hidden by default
+    auto *statusContainer = new QWidget();
+    auto *statusLayout = new QHBoxLayout(statusContainer);
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(10);
+
+    m_throbber = new QProgressBar();
+    m_throbber->setRange(0, 0);
+    m_throbber->setFixedHeight(6);
+    m_throbber->setFixedWidth(120);
+    m_throbber->setTextVisible(false);
+    statusLayout->addWidget(m_throbber);
+
+    m_statusLabel = new QLabel("Ready");
+    QFont statusFont = m_statusLabel->font();
+    statusFont.setItalic(true);
+    m_statusLabel->setFont(statusFont);
+    statusLayout->addWidget(m_statusLabel, 1);
+
+    m_statusContainer = statusContainer;
+    m_statusContainer->hide();
+    mainLayout->addWidget(m_statusContainer);
+
     // Separator
     auto *sep = new QFrame();
     sep->setFrameShape(QFrame::HLine);
     sep->setFrameShadow(QFrame::Sunken);
     mainLayout->addWidget(sep);
 
-    // Output view
+    // Collapsible output toggle
+    m_outputToggle = new QToolButton();
+    m_outputToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_outputToggle->setArrowType(Qt::RightArrow);
+    m_outputToggle->setText("  Output");
+    m_outputToggle->setCheckable(true);
+    m_outputToggle->setChecked(false);
+    m_outputToggle->setStyleSheet(
+        "QToolButton { border: none; padding: 4px; font-weight: bold; }"
+        "QToolButton:hover { background: palette(highlight); color: palette(highlighted-text); }"
+    );
+    connect(m_outputToggle, &QToolButton::clicked, this, &MainWindow::toggleOutput);
+    mainLayout->addWidget(m_outputToggle);
+
+    // Output container - hidden by default
+    m_outputContainer = new QWidget();
+    auto *outputLayout = new QVBoxLayout(m_outputContainer);
+    outputLayout->setContentsMargins(0, 0, 0, 0);
+    outputLayout->setSpacing(0);
+
     m_outputView = new QTextEdit();
     m_outputView->setReadOnly(true);
+    m_outputView->setMaximumHeight(150);
     QFont monoFont("Monospace");
     monoFont.setStyleHint(QFont::Monospace);
+    monoFont.setPointSize(9);
     m_outputView->setFont(monoFont);
     m_outputView->setPlaceholderText("Output will appear here...");
-    mainLayout->addWidget(m_outputView, 1);
+    outputLayout->addWidget(m_outputView);
+
+    m_outputContainer->hide();
+    mainLayout->addWidget(m_outputContainer);
 
     // Buttons
     auto *buttonLayout = new QHBoxLayout();
@@ -103,7 +151,33 @@ void MainWindow::setupUi()
     buttonLayout->addWidget(m_actionButton);
     mainLayout->addLayout(buttonLayout);
 
+    mainLayout->addStretch();
     setCentralWidget(central);
+}
+
+void MainWindow::toggleOutput()
+{
+    bool expanded = m_outputToggle->isChecked();
+    m_outputContainer->setVisible(expanded);
+    m_outputToggle->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+
+    if (expanded) {
+        resize(width(), height() + 160);
+    } else {
+        resize(width(), height() - 160);
+    }
+}
+
+void MainWindow::showActivity(const QString &text)
+{
+    m_throbber->show();
+    m_statusContainer->show();
+    m_statusLabel->setText(text);
+}
+
+void MainWindow::hideActivity()
+{
+    m_statusContainer->hide();
 }
 
 void MainWindow::loadPackageInfo()
@@ -111,7 +185,6 @@ void MainWindow::loadPackageInfo()
     QFileInfo fi(m_packagePath);
     if (!fi.exists()) {
         m_nameLabel->setText("File not found");
-        m_outputView->setText("Error: " + m_packagePath + " does not exist.");
         m_actionButton->setEnabled(false);
         return;
     }
@@ -120,7 +193,6 @@ void MainWindow::loadPackageInfo()
     QString name = fi.fileName();
     if (!(name.endsWith(".pkg.tar.zst") || name.endsWith(".pkg.tar.xz") || name.endsWith(".pkg.tar.gz") || name.endsWith(".pkg.tar"))) {
         m_nameLabel->setText("Invalid package");
-        m_outputView->setText("Error: Not a valid pacman package file.\nSupported formats: .pkg.tar.zst, .pkg.tar.xz, .pkg.tar.gz, .pkg.tar");
         m_actionButton->setEnabled(false);
         return;
     }
@@ -217,6 +289,10 @@ void MainWindow::installPackage()
     m_outputView->clear();
     m_outputView->append("Running: pkexec pacman -U \"" + m_packagePath + "\"\n");
 
+    // Show output and throbber
+    if (!m_outputToggle->isChecked()) toggleOutput();
+    showActivity("Installing package...");
+
     m_actionProcess = new QProcess(this);
     connect(m_actionProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::onProcessReadyRead);
     connect(m_actionProcess, &QProcess::readyReadStandardError, this, &MainWindow::onProcessErrorRead);
@@ -234,6 +310,10 @@ void MainWindow::uninstallPackage()
     m_actionButton->setText("Uninstalling...");
     m_outputView->clear();
     m_outputView->append("Running: pkexec pacman -R \"" + m_packageName + "\"\n");
+
+    // Show output and throbber
+    if (!m_outputToggle->isChecked()) toggleOutput();
+    showActivity("Removing package...");
 
     m_actionProcess = new QProcess(this);
     connect(m_actionProcess, &QProcess::readyReadStandardOutput, this, &MainWindow::onProcessReadyRead);
@@ -266,11 +346,17 @@ void MainWindow::onProcessFinished(int exitCode, QProcess::ExitStatus status)
 
     if (status == QProcess::CrashExit) {
         m_outputView->append("\n--- Process crashed ---");
+        m_statusLabel->setText("Error");
     } else if (exitCode != 0) {
         m_outputView->append("\n--- Operation failed (exit code " + QString::number(exitCode) + ") ---");
+        m_statusLabel->setText("Failed");
     } else {
         m_outputView->append(wasInstall ? "\n--- Package installed successfully ---" : "\n--- Package uninstalled successfully ---");
+        m_statusLabel->setText("Done");
     }
+
+    // Replace throbber with status text
+    m_throbber->hide();
 
     m_actionProcess->deleteLater();
     m_actionProcess = nullptr;

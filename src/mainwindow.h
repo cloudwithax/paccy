@@ -8,6 +8,8 @@
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <QGroupBox>
+#include <QToolButton>
+#include <QProgressBar>
 
 class MainWindow : public QMainWindow
 {
@@ -22,11 +24,14 @@ private slots:
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onProcessReadyRead();
     void onProcessErrorRead();
+    void toggleOutput();
 
 private:
     void loadPackageInfo();
     void checkIfInstalled();
     void setupUi();
+    void showActivity(const QString &text);
+    void hideActivity();
 
     QString m_packagePath;
     QString m_packageName;
@@ -43,6 +48,11 @@ private:
     QTextEdit *m_outputView;
     QProcess *m_actionProcess;
     QGroupBox *m_infoGroup;
+    QToolButton *m_outputToggle;
+    QWidget *m_outputContainer;
+    QProgressBar *m_throbber;
+    QLabel *m_statusLabel;
+    QWidget *m_statusContainer;
 };
 
 #endif // MAINWINDOW_H
