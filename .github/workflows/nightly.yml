@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm base-devel cmake qt6-base polkit git
+          pacman -Syu --noconfirm base-devel cmake qt6-base polkit git qt6-tools
           useradd -m builder
 
       - name: Checkout
@@ -35,7 +35,7 @@ jobs:
             mv "../paccy-${VERSION}.tar.gz" .
             sed -i "s|^source=.*|source=(\"paccy-${VERSION}.tar.gz\")|" PKGBUILD
             sed -i "s|^sha256sums=.*|sha256sums=(SKIP)|" PKGBUILD
-            makepkg -s --noconfirm
+            makepkg --noconfirm
           '
           cp /home/builder/build/*.pkg.tar.zst .
 
